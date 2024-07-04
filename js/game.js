@@ -1,14 +1,27 @@
 (function () {
-  let FPS = 10;
+  const initialFPS = 10;
+  let FPS = initialFPS;
   const SIZE = 40;
+  let intervalId;
+  let isPaused = false;
+  let isGameOver = false;
 
   let board;
   let snake;
   let food;
+  let foodType;
   let score = 0;
   let gameStarted = false;
 
   function init() {
+    FPS = initialFPS;
+    const existingBoard = document.getElementById("board");
+    if (existingBoard) existingBoard.remove();
+    const existingScore = document.getElementById("score");
+    if (existingScore) existingScore.remove();
+    const existingGameOver = document.getElementById("gameOver");
+    if (existingGameOver) existingGameOver.remove();
+
     board = new Board(SIZE);
     snake = new Snake([
       [4, 4],
@@ -16,7 +29,10 @@
       [4, 6],
     ]);
     placeFood();
-    setInterval(run, 1000 / FPS);
+    intervalId = setInterval(run, 1000 / FPS);
+    updateScore();
+    isGameOver = false;
+    score = 0;
     updateScore();
   }
 
@@ -28,20 +44,45 @@
     } while (snake.isOccupying(x, y));
 
     food = [x, y];
+    foodType = Math.random() < 0.67 ? "black" : "red";
     document.querySelector(
       `#board tr:nth-child(${x + 1}) td:nth-child(${y + 1})`
-    ).style.backgroundColor = "red";
+    ).style.backgroundColor = foodType;
   }
 
   function updateScore() {
     document.getElementById("score").innerText = String(score).padStart(5, "0");
   }
 
+  function increaseSpeed() {
+    FPS += 1;
+    clearInterval(intervalId);
+    intervalId = setInterval(run, 1000 / FPS);
+  }
+
+  function gameOver() {
+    clearInterval(intervalId);
+    isGameOver = true;
+    const gameOverElement = document.createElement("div");
+    gameOverElement.setAttribute("id", "gameOver");
+    gameOverElement.innerText = "Fim de Jogo!";
+    gameOverElement.style.position = "absolute";
+    gameOverElement.style.top = "10px";
+    gameOverElement.style.right = "10px";
+    gameOverElement.style.left = "600px";
+    gameOverElement.style.fontSize = "1.8rem";
+    gameOverElement.style.color = "black";
+
+    document.body.appendChild(gameOverElement);
+  }
+
   window.addEventListener("keydown", (e) => {
-    if (!gameStarted && e.key.toLowerCase() === "s") {
+    if (e.key.toLowerCase() === "s" && (!gameStarted || isGameOver)) {
       gameStarted = true;
       init();
-    } else if (gameStarted) {
+    } else if (e.key.toLowerCase() === "p" && gameStarted && !isGameOver) {
+      isPaused = !isPaused;
+    } else if (gameStarted && !isPaused && !isGameOver) {
       switch (e.key) {
         case "ArrowUp":
           snake.changeDirection(0);
@@ -66,6 +107,16 @@
       this.element = document.createElement("table");
       this.element.setAttribute("id", "board");
       this.color = "#ccc";
+      this.top = "10px";
+      this.position = "absolute";
+
+      const scoreElement = document.createElement("div");
+      scoreElement.setAttribute("id", "score");
+
+      scoreElement.style.fontSize = "1.5rem";
+
+      scoreElement.innerText = "00000";
+      document.body.appendChild(scoreElement);
       document.body.appendChild(this.element);
       for (let i = 0; i < size; i++) {
         const row = document.createElement("tr");
@@ -75,10 +126,6 @@
           row.appendChild(field);
         }
       }
-      const scoreElement = document.createElement("div");
-      scoreElement.setAttribute("id", "score");
-      scoreElement.innerText = "00000";
-      document.body.appendChild(scoreElement);
     }
   }
 
@@ -86,7 +133,8 @@
     constructor(body) {
       this.body = body;
       this.color = "#222";
-      this.direction = 1; // 0 para cima, 1 para direita, 2 para baixo, 3 para esquerda
+      this.direction = 1;
+      this.pendingDirection = 1;
       this.body.forEach(
         (field) =>
           (document.querySelector(
@@ -94,10 +142,11 @@
           ).style.backgroundColor = this.color)
       );
     }
+
     walk() {
       const head = this.body[this.body.length - 1];
       let newHead;
-      switch (this.direction) {
+      switch (this.pendingDirection) {
         case 0:
           newHead = [head[0] - 1, head[1]];
           break;
@@ -114,6 +163,19 @@
           break;
       }
 
+      if (
+        newHead[0] < 0 ||
+        newHead[0] >= SIZE ||
+        newHead[1] < 0 ||
+        newHead[1] >= SIZE ||
+        this.isOccupying(newHead[0], newHead[1])
+      ) {
+        gameOver();
+        return;
+      }
+
+      this.direction = this.pendingDirection;
+
       if (newHead[0] === food[0] && newHead[1] === food[1]) {
         this.body.push(newHead);
         document.querySelector(
@@ -121,9 +183,14 @@
             newHead[1] + 1
           })`
         ).style.backgroundColor = this.color;
+        if (foodType === "black") {
+          score += 1;
+        } else if (foodType === "red") {
+          score += 2;
+        }
         placeFood();
-        score++;
         updateScore();
+        increaseSpeed();
       } else {
         this.body.push(newHead);
         const oldTail = this.body.shift();
@@ -139,16 +206,26 @@
         ).style.backgroundColor = board.color;
       }
     }
-    changeDirection(direction) {
-      this.direction = direction;
+
+    changeDirection(newDirection) {
+      if (
+        (this.direction === 0 && newDirection === 2) ||
+        (this.direction === 2 && newDirection === 0) ||
+        (this.direction === 1 && newDirection === 3) ||
+        (this.direction === 3 && newDirection === 1)
+      ) {
+        return;
+      }
+      this.pendingDirection = newDirection;
     }
+
     isOccupying(x, y) {
       return this.body.some((field) => field[0] === x && field[1] === y);
     }
   }
 
   function run() {
-    if (gameStarted) {
+    if (gameStarted && !isPaused && !isGameOver) {
       snake.walk();
     }
   }
